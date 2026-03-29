@@ -1,0 +1,6 @@
+Flask
+opencv-contrib-python
+numpy
+SpeechRecognition
+face_recognition; python_version < "3.13"
+PyAudio; python_version < "3.13"

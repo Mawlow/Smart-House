@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Portal</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body class="app-bg">
+  <main class="layout">
+    <header class="topbar">
+      <div>
+        <p class="kicker">Smart Home</p>
+        <h1>Admin Portal</h1>
+      </div>
+      <div class="buttons topbar-actions">
+        <button type="button" id="notif-bell-btn" class="notif-bell" title="Security alerts" aria-label="Security alerts">
+          <svg class="notif-bell-svg" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+          </svg>
+          <span id="notif-badge" class="notif-badge is-hidden">0</span>
+        </button>
+        <a class="mini-link" href="{{ url_for('door_portal') }}">Go to Door</a>
+        <button id="logout-btn" class="action-btn danger small">Logout</button>
+      </div>
+    </header>
+
+    <section class="admin-grid">
+      <article class="glass-card">
+        <h2>Face Registration</h2>
+        <div class="form-row">
+          <input id="username" type="text" placeholder="Enter username" />
+          <button id="register-btn" class="action-btn primary">Register Face</button>
+          <button id="fp-register-btn" class="action-btn secondary">Register Fingerprint</button>
+        </div>
+        <div class="video-wrap">
+          <video id="video-feed" autoplay playsinline muted></video>
+        </div>
+      </article>
+
+      <article class="glass-card">
+        <h2>Registered Faces</h2>
+        <ul id="users-list" class="list"></ul>
+      </article>
+
+      <article class="glass-card">
+        <h2>Registered fingerprints (ESP32)</h2>
+        <p class="muted">Same username field as above. Enrollment runs on the AS608/JM-101B: place the <strong>same finger twice</strong> when you click (ESP32 blocks ~2 minutes). Slots 0–161; Pi stores username → slot.</p>
+        <ul id="fp-users-list" class="list"></ul>
+      </article>
+
+      <article class="glass-card" id="security-alerts-section">
+        <h2>Security Alerts</h2>
+        <p class="muted">Unauthorized door attempts (with snapshot), front PIR motion (HC-SR501), and gas/smoke emergency (ESP32 opens all doors — see <code>ESP32_WIRING.md</code>). For <strong>gas/smoke</strong> alerts, use <strong>Acknowledge &amp; lock all doors</strong> after the area is safe; the ESP32 buzzer stops when readings fall below threshold.</p>
+        <button id="clear-alerts-btn" class="action-btn secondary">Clear Alerts</button>
+        <div id="alerts-list" class="alerts"></div>
+      </article>
+
+      <article class="glass-card">
+        <h2>Home Controls</h2>
+        <div class="buttons">
+          <button class="action-btn primary" data-cmd="turn on light">Turn On Light</button>
+          <button class="action-btn secondary" data-cmd="turn off light">Turn Off Light</button>
+          <button class="action-btn primary" data-cmd="open_all_doors">Open All Doors</button>
+          <button class="action-btn primary" data-cmd="open entrance door">Open Entrance</button>
+          <button class="action-btn primary" data-cmd="open room door">Open Room</button>
+          <button class="action-btn primary" data-cmd="open exit door">Open Exit</button>
+          <button class="action-btn secondary" data-cmd="close_all_doors">Close All Doors</button>
+          <button class="action-btn secondary" data-cmd="close room door">Close Room</button>
+          <button class="action-btn secondary" data-cmd="close exit door">Close Exit</button>
+          <button class="action-btn secondary" data-cmd="open door">Open Door (entrance)</button>
+          <button class="action-btn secondary" data-cmd="close door">Close Entrance</button>
+          <button id="voice-btn" class="action-btn ghost">Start Voice Command</button>
+        </div>
+        <p class="status-text">Message: <span id="main-message">System ready</span></p>
+        <p class="status-text">Access: <span id="access-status">IDLE</span></p>
+        <p class="status-text">Command: <span id="command-status">NONE</span></p>
+        <p class="status-text">Light: <span id="light-status">OFF</span> | Entrance: <span id="door-status">CLOSED</span> | Room: <span id="room-door-status">CLOSED</span> | Exit: <span id="exit-door-status">CLOSED</span></p>
+      </article>
+
+      <article class="glass-card">
+        <h2>Camera (USB on Pi)</h2>
+        <p class="muted">Video is captured on the machine running Flask. Open this site on the Pi only after you run <code>python app.py</code> on the Pi. USB webcams are often index <strong>1</strong> or <strong>2</strong> if the Pi camera is <strong>0</strong>.</p>
+        <div class="form-row">
+          <input id="camera-index" type="number" min="0" max="10" step="1" placeholder="Camera index (0, 1, 2...)" />
+          <button id="save-camera-btn" class="action-btn primary">Apply Camera</button>
+          <button id="probe-camera-btn" class="action-btn ghost">Probe Indexes</button>
+        </div>
+        <p class="status-text">Active index: <span id="camera-index-display">—</span> | Open: <span id="camera-ok-display">—</span></p>
+        <p class="status-text" id="camera-probe-result"></p>
+      </article>
+
+      <article class="glass-card">
+        <h2>ESP32 Settings</h2>
+        <div class="form-row">
+          <input id="esp32-url" type="text" placeholder="ESP32 host (e.g. 192.168.1.50 — http:// added if missing)" />
+          <input id="esp32-key" type="text" placeholder="API Key" />
+          <input id="esp32-timeout" type="number" step="0.5" min="0.5" max="10" placeholder="Timeout sec" />
+          <input id="esp32-motion-poll" type="number" step="0.05" min="0.35" max="3" placeholder="Motion poll sec" title="How often the server asks the ESP32 for PIR state (lower = snappier alerts)" />
+        </div>
+        <div class="buttons">
+          <button id="save-esp32-btn" class="action-btn primary">Save ESP32 Settings</button>
+          <button id="test-esp32-btn" class="action-btn ghost">Test ESP32 Connection</button>
+        </div>
+        <p class="muted">Front PIR (HC-SR501 on <code>GPIO32</code>): server polls at <strong>Motion poll sec</strong> and adds one <strong>Security Alert</strong> per <em>new</em> motion edge (not every second while you stand there). If the PIR feels dull, turn up <strong>sensitivity</strong> on the module and shorten the <strong>time-delay</strong> pot — see <code>ESP32_WIRING.md</code>.</p>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const usernameInput = document.getElementById("username");
+    const registerBtn = document.getElementById("register-btn");
+    const fpRegisterBtn = document.getElementById("fp-register-btn");
+    const usersList = document.getElementById("users-list");
+    const fpUsersList = document.getElementById("fp-users-list");
+    const alertsList = document.getElementById("alerts-list");
+    const clearAlertsBtn = document.getElementById("clear-alerts-btn");
+    const notifBellBtn = document.getElementById("notif-bell-btn");
+    const notifBadge = document.getElementById("notif-badge");
+    const voiceBtn = document.getElementById("voice-btn");
+    const logoutBtn = document.getElementById("logout-btn");
+    const mainMessage = document.getElementById("main-message");
+    const accessStatus = document.getElementById("access-status");
+    const commandStatus = document.getElementById("command-status");
+    const lightStatus = document.getElementById("light-status");
+    const doorStatus = document.getElementById("door-status");
+    const roomDoorStatus = document.getElementById("room-door-status");
+    const exitDoorStatus = document.getElementById("exit-door-status");
+    const esp32UrlInput = document.getElementById("esp32-url");
+    const esp32KeyInput = document.getElementById("esp32-key");
+    const esp32TimeoutInput = document.getElementById("esp32-timeout");
+    const esp32MotionPollInput = document.getElementById("esp32-motion-poll");
+    const saveEsp32Btn = document.getElementById("save-esp32-btn");
+    const testEsp32Btn = document.getElementById("test-esp32-btn");
+    const cameraIndexInput = document.getElementById("camera-index");
+    const saveCameraBtn = document.getElementById("save-camera-btn");
+    const probeCameraBtn = document.getElementById("probe-camera-btn");
+    const cameraIndexDisplay = document.getElementById("camera-index-display");
+    const cameraOkDisplay = document.getElementById("camera-ok-display");
+    const cameraProbeResult = document.getElementById("camera-probe-result");
+
+    function setMessage(text) {
+      mainMessage.textContent = text;
+    }
+
+    async function postJson(url, data = {}) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const payload = await response.json().catch(() => ({}));
+      return { ok: response.ok, payload };
+    }
+
+    async function refreshStatus() {
+      try {
+        const response = await fetch("/status");
+        const status = await response.json();
+        accessStatus.textContent = status.access || "IDLE";
+        commandStatus.textContent = status.command || "NONE";
+        lightStatus.textContent = (status.controls || {}).light || "OFF";
+        const ctr = status.controls || {};
+        doorStatus.textContent = ctr.door || "CLOSED";
+        roomDoorStatus.textContent = ctr.room_door || "CLOSED";
+        exitDoorStatus.textContent = ctr.exit_door || "CLOSED";
+        if (typeof status.camera_index === "number") {
+          cameraIndexDisplay.textContent = String(status.camera_index);
+          cameraOkDisplay.textContent = status.camera_ok ? "yes" : "no";
+        }
+        if (status.message) setMessage(status.message);
+      } catch (_err) {}
+    }
+
+    async function loadUsers() {
+      const response = await fetch("/admin/users");
+      const payload = await response.json();
+      usersList.innerHTML = "";
+      (payload.users || []).forEach((name) => {
+        const li = document.createElement("li");
+        li.className = "list-item";
+        li.innerHTML = `<span>${name}</span><button class="action-btn danger small" data-name="${name}">Delete</button>`;
+        usersList.appendChild(li);
+      });
+    }
+
+    async function loadFpUsers() {
+      const response = await fetch("/admin/fingerprint-users");
+      if (!response.ok) return;
+      const payload = await response.json();
+      fpUsersList.innerHTML = "";
+      const rows = payload.users || [];
+      if (!rows.length) {
+        fpUsersList.innerHTML = "<li class='list-item muted'>No fingerprints registered yet.</li>";
+        return;
+      }
+      rows.forEach((row) => {
+        const name = row.username || "";
+        const slot = row.page_id;
+        const li = document.createElement("li");
+        li.className = "list-item";
+        li.innerHTML = `<span>${name} <small class="muted">(slot ${slot})</small></span><button type="button" class="action-btn danger small" data-fp-name="${name}">Delete</button>`;
+        fpUsersList.appendChild(li);
+      });
+    }
+
+    async function loadCameraSettings() {
+      const response = await fetch("/admin/camera-settings");
+      const payload = await response.json();
+      if (!response.ok) return;
+      const settings = payload.settings || {};
+      cameraIndexInput.value = settings.camera_index ?? 0;
+    }
+
+    async function loadEsp32Settings() {
+      const response = await fetch("/admin/esp32-settings");
+      const payload = await response.json();
+      if (!response.ok) return;
+      const settings = payload.settings || {};
+      esp32UrlInput.value = settings.base_url || "";
+      esp32KeyInput.value = settings.api_key || "";
+      esp32TimeoutInput.value = settings.timeout_sec || 2;
+      esp32MotionPollInput.value =
+        settings.motion_poll_sec !== undefined && settings.motion_poll_sec !== null
+          ? settings.motion_poll_sec
+          : 0.65;
+    }
+
+    function updateNotifBadge(count) {
+      const n = Number(count) || 0;
+      if (n > 0) {
+        notifBadge.textContent = n > 99 ? "99+" : String(n);
+        notifBadge.classList.remove("is-hidden");
+      } else {
+        notifBadge.classList.add("is-hidden");
+      }
+    }
+
+    async function loadAlerts() {
+      const response = await fetch("/admin/notifications");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        updateNotifBadge(0);
+        return;
+      }
+      updateNotifBadge(payload.unacknowledged_count);
+      alertsList.innerHTML = "";
+      const rows = payload.notifications || [];
+      if (!rows.length) {
+        alertsList.innerHTML = "<p class='muted'>No alerts yet.</p>";
+        return;
+      }
+      rows.forEach((note) => {
+        const item = document.createElement("div");
+        const isEmergency = note.kind === "emergency";
+        const isAck = !!note.acknowledged;
+        item.className = "alert-card" + (isEmergency ? " alert-card-emergency" : "") + (isAck ? " alert-card-ack" : "");
+
+        const left = document.createElement("div");
+        if (note.image) {
+          const img = document.createElement("img");
+          img.src = note.image;
+          img.alt = "Alert snapshot";
+          left.appendChild(img);
+        } else {
+          const ph = document.createElement("div");
+          ph.className = "alert-card-placeholder muted";
+          ph.textContent = isEmergency ? "Emergency" : "No image";
+          left.appendChild(ph);
+        }
+
+        const body = document.createElement("div");
+        const p = document.createElement("p");
+        p.textContent = note.message || "";
+        body.appendChild(p);
+        const small = document.createElement("small");
+        small.className = "muted";
+        small.textContent = note.time || "";
+        body.appendChild(small);
+
+        if (isEmergency && !isAck && note.id) {
+          const ackRow = document.createElement("div");
+          ackRow.className = "alert-ack-row";
+          const ackBtn = document.createElement("button");
+          ackBtn.type = "button";
+          ackBtn.className = "action-btn secondary small";
+          ackBtn.textContent = "Acknowledge & lock all doors";
+          ackBtn.dataset.ackId = note.id;
+          ackRow.appendChild(ackBtn);
+          body.appendChild(ackRow);
+        } else if (isEmergency && isAck) {
+          const tag = document.createElement("div");
+          tag.className = "alert-ack-tag muted";
+          tag.textContent = "Acknowledged";
+          body.appendChild(tag);
+        }
+
+        item.appendChild(left);
+        item.appendChild(body);
+        alertsList.appendChild(item);
+      });
+    }
+
+    registerBtn.addEventListener("click", async () => {
+      const username = usernameInput.value.trim();
+      if (!username) return setMessage("Enter a username first.");
+      setMessage("Registering face samples...");
+      const video = document.getElementById("video-feed");
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext("2d");
+      let okCount = 0;
+      for (let i = 0; i < 12; i += 1) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const image = canvas.toDataURL("image/jpeg", 0.9);
+        const result = await postJson("/register_face_frame", { username, image });
+        if (result.ok) okCount += 1;
+        await new Promise((r) => setTimeout(r, 120));
+      }
+      setMessage(`Registration done. Captured ${okCount} samples for ${username}.`);
+      await loadUsers();
+      refreshStatus();
+    });
+
+    fpRegisterBtn.addEventListener("click", async () => {
+      const username = usernameInput.value.trim();
+      if (!username) return setMessage("Enter a username first.");
+      setMessage("Fingerprint: place finger on ESP32 sensor, wait, lift, place same finger again (up to ~2 min)…");
+      fpRegisterBtn.disabled = true;
+      try {
+        const result = await postJson("/admin/register_fingerprint", { username });
+        const p = result.payload || {};
+        setMessage(p.message || (result.ok ? "Fingerprint registered." : "Fingerprint registration failed."));
+        await loadFpUsers();
+        refreshStatus();
+      } finally {
+        fpRegisterBtn.disabled = false;
+      }
+    });
+
+    usersList.addEventListener("click", async (event) => {
+      const btn = event.target.closest("button[data-name]");
+      if (!btn) return;
+      const username = btn.dataset.name;
+      const result = await postJson("/admin/delete_face", { username });
+      setMessage(result.payload.message || "Deleted.");
+      await loadUsers();
+      refreshStatus();
+    });
+
+    fpUsersList.addEventListener("click", async (event) => {
+      const btn = event.target.closest("button[data-fp-name]");
+      if (!btn) return;
+      const username = btn.dataset.fpName;
+      const result = await postJson("/admin/delete_fingerprint", { username });
+      setMessage(result.payload.message || "Fingerprint deleted.");
+      await loadFpUsers();
+      refreshStatus();
+    });
+
+    document.querySelectorAll("button[data-cmd]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const cmd = btn.getAttribute("data-cmd");
+        if (!cmd) return;
+        const result = await postJson("/admin/control", { command: cmd });
+        const p = result.payload || {};
+        const esp = p.esp32 || {};
+        if (esp.ok === false && esp.message) {
+          setMessage(`${p.message || "Command sent."} — ESP32: ${esp.message}`);
+        } else {
+          setMessage(p.message || "Command sent.");
+        }
+        refreshStatus();
+      });
+    });
+
+    clearAlertsBtn.addEventListener("click", async () => {
+      await postJson("/admin/clear_notifications");
+      loadAlerts();
+      setMessage("Alerts cleared.");
+    });
+
+    notifBellBtn.addEventListener("click", () => {
+      document.getElementById("security-alerts-section").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    alertsList.addEventListener("click", async (event) => {
+      const btn = event.target.closest("button[data-ack-id]");
+      if (!btn) return;
+      const id = btn.dataset.ackId;
+      btn.disabled = true;
+      try {
+        const result = await postJson("/admin/acknowledge_emergency", { id });
+        const p = result.payload || {};
+        const esp = p.esp32 || {};
+        if (esp.ok === false && esp.message) {
+          setMessage(`${p.message || "Acknowledged."} — ESP32: ${esp.message}`);
+        } else {
+          setMessage(p.message || "Emergency acknowledged.");
+        }
+        await loadAlerts();
+        refreshStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    voiceBtn.addEventListener("click", async () => {
+      setMessage("Listening for voice command...");
+      const result = await postJson("/start_voice_command");
+      const p = result.payload || {};
+      let msg = p.message || "Voice finished.";
+      if (!result.ok && p.heard) {
+        msg += ` Heard: "${p.heard}"`;
+      }
+      setMessage(msg);
+      refreshStatus();
+    });
+
+    logoutBtn.addEventListener("click", async () => {
+      await postJson("/admin/logout");
+      window.location.href = "/door";
+    });
+
+    saveEsp32Btn.addEventListener("click", async () => {
+      const data = {
+        base_url: esp32UrlInput.value.trim(),
+        api_key: esp32KeyInput.value.trim(),
+        timeout_sec: Number(esp32TimeoutInput.value || 2),
+        motion_poll_sec: Number(esp32MotionPollInput.value || 0.65),
+      };
+      const result = await postJson("/admin/esp32-settings", data);
+      setMessage(result.payload.message || "ESP32 settings saved.");
+    });
+
+    testEsp32Btn.addEventListener("click", async () => {
+      const result = await postJson("/admin/esp32-test");
+      setMessage(`ESP32: ${result.payload.message || "No response"}`);
+    });
+
+    saveCameraBtn.addEventListener("click", async () => {
+      const result = await postJson("/admin/camera-settings", {
+        camera_index: Number(cameraIndexInput.value || 0),
+      });
+      setMessage(result.payload.message || "Camera updated.");
+      refreshStatus();
+    });
+
+    probeCameraBtn.addEventListener("click", async () => {
+      cameraProbeResult.textContent = "Probing camera indexes...";
+      const response = await fetch("/admin/camera-probe");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        cameraProbeResult.textContent = payload.message || "Probe failed.";
+        return;
+      }
+      const available = (payload.results || []).filter((x) => x.ok).map((x) => x.index);
+      cameraProbeResult.textContent = available.length
+        ? `Available camera indexes: ${available.join(", ")}`
+        : "No camera index available (0-10).";
+    });
+
+    loadUsers();
+    loadFpUsers();
+    loadAlerts();
+    loadCameraSettings();
+    loadEsp32Settings();
+    refreshStatus();
+    setInterval(() => {
+      refreshStatus();
+      loadAlerts();
+    }, 2000);
+
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        const video = document.getElementById("video-feed");
+        video.srcObject = stream;
+      } catch (_err) {
+        setMessage("Cannot access browser camera on this device.");
+      }
+    })();
+  </script>
+</body>
+</html>

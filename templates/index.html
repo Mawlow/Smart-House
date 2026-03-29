@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Home - Module 1</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="container">
+    <h1>Smart Home System - Module 1</h1>
+
+    <div class="panel">
+      <h2>Live Camera</h2>
+      <img id="video-feed" src="{{ url_for('video_feed') }}" alt="Live webcam feed" />
+    </div>
+
+    <div class="panel controls">
+      <h2>Controls</h2>
+      <label for="username">Username for registration:</label>
+      <input id="username" type="text" placeholder="Enter username" />
+
+      <div class="buttons">
+        <button id="register-btn">Register Face</button>
+        <button id="recognize-btn">Start Recognition</button>
+        <button id="voice-btn">Start Voice Command</button>
+      </div>
+    </div>
+
+    <div class="panel status-panel">
+      <h2>System Messages</h2>
+      <p id="main-message">System ready</p>
+      <p><strong>Access Status:</strong> <span id="access-status">IDLE</span></p>
+      <p><strong>Command Detected:</strong> <span id="command-status">None</span></p>
+    </div>
+  </div>
+
+  <script>
+    const registerBtn = document.getElementById("register-btn");
+    const recognizeBtn = document.getElementById("recognize-btn");
+    const voiceBtn = document.getElementById("voice-btn");
+    const usernameInput = document.getElementById("username");
+    const mainMessage = document.getElementById("main-message");
+    const accessStatus = document.getElementById("access-status");
+    const commandStatus = document.getElementById("command-status");
+
+    function setMessage(text) {
+      mainMessage.textContent = text;
+    }
+
+    async function postJson(url, data = {}) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const payload = await response.json().catch(() => ({}));
+      return { ok: response.ok, payload };
+    }
+
+    async function refreshStatus() {
+      try {
+        const response = await fetch("/status");
+        const status = await response.json();
+        accessStatus.textContent = status.access || "IDLE";
+        commandStatus.textContent = status.command || "None";
+        if (status.message) {
+          setMessage(status.message);
+        }
+      } catch (_err) {
+        // Ignore temporary UI fetch errors.
+      }
+    }
+
+    registerBtn.addEventListener("click", async () => {
+      const username = usernameInput.value.trim();
+      if (!username) {
+        setMessage("Please enter a username first.");
+        return;
+      }
+
+      setMessage("Registering face, please look at the camera...");
+      const result = await postJson("/register_face", { username });
+      setMessage(result.payload.message || "Registration finished.");
+      refreshStatus();
+    });
+
+    recognizeBtn.addEventListener("click", async () => {
+      setMessage("Recognizing face...");
+      const result = await postJson("/start_recognition");
+      setMessage(result.payload.message || "Recognition finished.");
+      refreshStatus();
+    });
+
+    voiceBtn.addEventListener("click", async () => {
+      setMessage("Listening for voice command...");
+      const result = await postJson("/start_voice_command");
+      setMessage(result.payload.message || "Voice command finished.");
+      refreshStatus();
+    });
+
+    refreshStatus();
+    setInterval(refreshStatus, 1500);
+  </script>
+</body>
+</html>

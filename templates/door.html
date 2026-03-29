@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Door Portal</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body class="app-bg door-portal">
+  <main class="layout door-portal-main">
+    <header class="topbar door-portal-topbar">
+      <div>
+        <p class="kicker">Smart Home</p>
+        <h1>Door Access Portal</h1>
+      </div>
+      <a href="{{ url_for('admin_login_page') }}" class="mini-link mini-btn">Admin Login</a>
+    </header>
+
+    <section class="door-portal-split" aria-label="Camera and recognition">
+      <article class="glass-card camera-card door-portal-camera">
+        <video id="video-feed" autoplay playsinline muted></video>
+      </article>
+      <article class="glass-card door-identity-card">
+        <h2>Identity Check</h2>
+        <p id="main-message" class="status-text door-portal-message">Ready for face scan.</p>
+        <div class="status-chip-wrap">
+          <span class="status-chip" id="access-status">IDLE</span>
+          <span class="status-chip ghost" id="command-status">NONE</span>
+        </div>
+        <button id="recognize-btn" type="button" class="action-btn primary full door-portal-recognize-btn">Start Recognition</button>
+      </article>
+    </section>
+
+  </main>
+
+  <script>
+    const recognizeBtn = document.getElementById("recognize-btn");
+    const mainMessage = document.getElementById("main-message");
+    const accessStatus = document.getElementById("access-status");
+    const commandStatus = document.getElementById("command-status");
+
+    function setMessage(text) {
+      mainMessage.textContent = text;
+    }
+
+    function setStatusBadge(el, value) {
+      el.textContent = value;
+      el.classList.remove("success", "danger", "info");
+      if (value.includes("GRANTED")) el.classList.add("success");
+      else if (value.includes("DENIED")) el.classList.add("danger");
+      else el.classList.add("info");
+    }
+
+    async function postJson(url, data = {}) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const payload = await response.json().catch(() => ({}));
+      return { ok: response.ok, payload };
+    }
+
+    async function refreshStatus() {
+      try {
+        const response = await fetch("/status");
+        const status = await response.json();
+        setStatusBadge(accessStatus, status.access || "IDLE");
+        commandStatus.textContent = status.command || "NONE";
+        if (status.message) setMessage(status.message);
+      } catch (_err) {}
+    }
+
+    function captureFrameDataUrl() {
+      const video = document.getElementById("video-feed");
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.9);
+    }
+
+    async function startBrowserCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        document.getElementById("video-feed").srcObject = stream;
+      } catch (_err) {
+        setMessage("Cannot access browser camera on this device.");
+      }
+    }
+
+    recognizeBtn.addEventListener("click", async () => {
+      setMessage("Scanning, please look directly at the camera...");
+      const image = captureFrameDataUrl();
+      const result = await postJson("/start_recognition_frame", { image });
+      setMessage(result.payload.message || "Scan completed.");
+      refreshStatus();
+    });
+
+    startBrowserCamera();
+    refreshStatus();
+    setInterval(refreshStatus, 1200);
+  </script>
+</body>
+</html>

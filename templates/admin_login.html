@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body class="app-bg">
+  <main class="portal-page">
+    <section class="glass-card">
+      <p class="kicker">Smart Home</p>
+      <h1>Admin Login</h1>
+      <p class="muted">Only admin can access management portal.</p>
+
+      <div class="form-row">
+        <input id="admin-username" type="text" placeholder="Admin username" />
+        <input id="admin-password" type="password" placeholder="Admin password" />
+      </div>
+      <div class="portal-actions">
+        <button id="admin-login-btn" class="action-btn primary">Login</button>
+        <a href="{{ url_for('door_portal') }}" class="action-btn ghost">Back to Door</a>
+      </div>
+      <p class="muted" id="login-message"></p>
+    </section>
+  </main>
+
+  <script>
+    const adminLoginBtn = document.getElementById("admin-login-btn");
+    const adminUsername = document.getElementById("admin-username");
+    const adminPassword = document.getElementById("admin-password");
+    const loginMessage = document.getElementById("login-message");
+
+    async function postJson(url, data = {}) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const payload = await response.json().catch(() => ({}));
+      return { ok: response.ok, payload };
+    }
+
+    adminLoginBtn.addEventListener("click", async () => {
+      const username = adminUsername.value.trim();
+      const password = adminPassword.value.trim();
+      if (!username || !password) {
+        loginMessage.textContent = "Enter admin username and password.";
+        return;
+      }
+      const result = await postJson("/admin/login", { username, password });
+      loginMessage.textContent = result.payload.message || "Login attempt finished.";
+      if (result.ok) {
+        window.location.href = "/admin";
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Home Portals</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body class="app-bg">
+  <main class="portal-page">
+    <section class="glass-card">
+      <p class="kicker">Smart Home Access</p>
+      <h1>Choose Portal</h1>
+      <p class="muted">Touch-friendly interface for Raspberry Pi 7-inch display.</p>
+      <div class="portal-actions">
+        <a class="action-btn primary" href="{{ url_for('door_portal') }}">Door Portal</a>
+        <a class="action-btn secondary" href="{{ url_for('admin_portal') }}">Admin Portal</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
