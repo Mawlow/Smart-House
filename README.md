@@ -206,6 +206,7 @@ If analog readings sit at max, wiring or warm-up may be wrong — see **`ESP32_W
 - **REST:** `GET /api/ping` (status, motion, emergency), `POST /api/control` (door/light commands), fingerprint enroll/delete under **`/api/fingerprint/*`**.
 - Full pin map: **`ESP32_WIRING.md`**.
 
+https://drive.google.com/file/d/1aOMOt-hKQE58HvCIdc49YxgJFsKBrM1Q/view?usp=sharing
 ---
 
 ## Security notes
