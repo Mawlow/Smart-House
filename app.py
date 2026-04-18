@@ -62,10 +62,120 @@ last_status = {
 notifications = []
 control_state = {
     "light": "OFF",
+    "light_2": "OFF",
     "door": "CLOSED",
     "room_door": "CLOSED",
     "exit_door": "CLOSED",
 }
+
+# Substring match on transcript (Google or browser). Sorted longest-first so e.g.
+# "turn on light" does not win inside "turn on light two".
+_VOICE_PHRASES_RAW = (
+    ("close all the doors", "CLOSE ALL DOORS", "close_all_doors"),
+    ("close all doors", "CLOSE ALL DOORS", "close_all_doors"),
+    ("lock all the doors", "CLOSE ALL DOORS", "lock_all_doors"),
+    ("lock all doors", "CLOSE ALL DOORS", "lock_all_doors"),
+    ("open all the doors", "OPEN ALL DOORS", "open_all_doors"),
+    ("open all doors", "OPEN ALL DOORS", "open_all_doors"),
+    ("open the entrance door", "OPEN ENTRANCE DOOR", "open entrance door"),
+    ("open entrance door", "OPEN ENTRANCE DOOR", "open entrance door"),
+    ("unlock the room door", "OPEN ROOM DOOR", "open room door"),
+    ("open the room door", "OPEN ROOM DOOR", "open room door"),
+    ("open room door", "OPEN ROOM DOOR", "open room door"),
+    ("unlock room door", "OPEN ROOM DOOR", "open room door"),
+    ("open the room", "OPEN ROOM DOOR", "open room door"),
+    ("open the exit door", "OPEN EXIT DOOR", "open exit door"),
+    ("open exit door", "OPEN EXIT DOOR", "open exit door"),
+    ("close entrance door", "CLOSE ENTRANCE DOOR", "close entrance door"),
+    ("close the exit door", "CLOSE EXIT DOOR", "close exit door"),
+    ("close exit door", "CLOSE EXIT DOOR", "close exit door"),
+    ("close room door", "CLOSE ROOM DOOR", "close room door"),
+    ("turn off the second light", "TURN OFF LIGHT 2", "turn off light 2"),
+    ("turn on the second light", "TURN ON LIGHT 2", "turn on light 2"),
+    ("turn off light two", "TURN OFF LIGHT 2", "turn off light 2"),
+    ("turn on light two", "TURN ON LIGHT 2", "turn on light 2"),
+    ("turn off light 2", "TURN OFF LIGHT 2", "turn off light 2"),
+    ("turn on light 2", "TURN ON LIGHT 2", "turn on light 2"),
+    ("second light off", "TURN OFF LIGHT 2", "turn off light 2"),
+    ("second light on", "TURN ON LIGHT 2", "turn on light 2"),
+    ("switch off the light", "TURN OFF LIGHT", "turn off light"),
+    ("turn off the light", "TURN OFF LIGHT", "turn off light"),
+    ("turn off light", "TURN OFF LIGHT", "turn off light"),
+    ("open room", "OPEN ROOM DOOR", "open room door"),
+    ("turn on light", "TURN ON LIGHT", "turn on light"),
+    ("close door", "CLOSE DOOR", "close door"),
+    ("lights off", "TURN OFF LIGHT", "turn off light"),
+    ("lights on", "TURN ON LIGHT", "turn on light"),
+    ("open light", "TURN ON LIGHT", "turn on light"),
+    ("open door", "OPEN DOOR", "open door"),
+)
+VOICE_PHRASES = tuple(sorted(_VOICE_PHRASES_RAW, key=lambda t: len(t[0]), reverse=True))
+
+
+def apply_voice_command_text(raw_text):
+    """Match transcript and update state + ESP32. Returns (response_dict, http_status)."""
+    text = (raw_text or "").lower().strip()
+    if not text:
+        last_status["message"] = "No speech text provided."
+        return {"ok": False, "message": last_status["message"]}, 400
+
+    detected = None
+    esp32_command = None
+    for phrase, label, esp_cmd in VOICE_PHRASES:
+        if phrase in text:
+            detected = label
+            esp32_command = esp_cmd
+            break
+
+    if detected and esp32_command:
+        last_status["command"] = detected
+        last_status["message"] = f"Command Detected: {detected}"
+        if esp32_command == "turn on light":
+            control_state["light"] = "ON"
+        elif esp32_command == "turn off light":
+            control_state["light"] = "OFF"
+        elif esp32_command == "turn on light 2":
+            control_state["light_2"] = "ON"
+        elif esp32_command == "turn off light 2":
+            control_state["light_2"] = "OFF"
+        elif esp32_command in ("open door", "open entrance door"):
+            control_state["door"] = "OPEN"
+        elif esp32_command == "open room door":
+            control_state["room_door"] = "OPEN"
+        elif esp32_command == "open exit door":
+            control_state["exit_door"] = "OPEN"
+        elif esp32_command == "open_all_doors":
+            control_state["door"] = "OPEN"
+            control_state["room_door"] = "OPEN"
+            control_state["exit_door"] = "OPEN"
+        elif esp32_command in ("close_all_doors", "lock_all_doors"):
+            control_state["door"] = "CLOSED"
+            control_state["room_door"] = "CLOSED"
+            control_state["exit_door"] = "CLOSED"
+        elif esp32_command == "close entrance door":
+            control_state["door"] = "CLOSED"
+        elif esp32_command == "close room door":
+            control_state["room_door"] = "CLOSED"
+        elif esp32_command == "close exit door":
+            control_state["exit_door"] = "CLOSED"
+        elif esp32_command == "close door":
+            control_state["door"] = "CLOSED"
+        call_esp32("/api/control", {"command": esp32_command})
+        return {"ok": True, "message": last_status["message"], "command": detected}, 200
+
+    last_status["command"] = "UNKNOWN"
+    last_status["message"] = "No valid command detected."
+    return (
+        {
+            "ok": False,
+            "message": last_status["message"],
+            "command": "UNKNOWN",
+            "heard": text,
+        },
+        200,
+    )
+
+
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
@@ -275,6 +385,8 @@ ESP32_UNDERSCORE_TO_COMMAND = {
     "open_room_door": "open room door",
     "close_entrance_door": "close entrance door",
     "open_entrance_door": "open entrance door",
+    "turn_on_light_2": "turn on light 2",
+    "turn_off_light_2": "turn off light 2",
 }
 
 
@@ -282,7 +394,13 @@ def normalize_esp32_control_command(raw):
     s = str(raw or "").strip().lower()
     s = " ".join(s.split())
     s = ESP32_UNDERSCORE_TO_COMMAND.get(s, s)
-    return ESP32_CONTROL_ALIASES.get(s, s)
+    s = ESP32_CONTROL_ALIASES.get(s, s)
+    # Speech / UI sometimes sends "two" instead of "2"; ESP32 expects digit form.
+    if s == "turn on light two":
+        s = "turn on light 2"
+    elif s == "turn off light two":
+        s = "turn off light 2"
+    return s
 
 
 def load_fingerprint_users():
@@ -834,6 +952,17 @@ def start_recognition_frame():
     return jsonify({"ok": False, "message": last_status["message"], "status": last_status["access"]})
 
 
+@app.route("/voice_command_text", methods=["POST"])
+def voice_command_text():
+    """Apply a voice command from transcript text (e.g. browser Web Speech API on the client)."""
+    payload = request.json or {}
+    text = payload.get("text", "")
+    if not isinstance(text, str):
+        return jsonify({"ok": False, "message": "Invalid text payload."}), 400
+    body, status = apply_voice_command_text(text)
+    return jsonify(body), status
+
+
 @app.route("/start_voice_command", methods=["POST"])
 def start_voice_command():
     if not VOICE_LIB_AVAILABLE:
@@ -842,95 +971,14 @@ def start_voice_command():
         return jsonify({"ok": False, "message": f"{msg} ({VOICE_LIB_ERROR})"}), 503
 
     recognizer = sr.Recognizer()
-    # Substring match on Google transcript; order matters — list longer/specific phrases before shorter ones.
-    voice_phrases = (
-        ("close all the doors", "CLOSE ALL DOORS", "close_all_doors"),
-        ("close all doors", "CLOSE ALL DOORS", "close_all_doors"),
-        ("lock all the doors", "CLOSE ALL DOORS", "lock_all_doors"),
-        ("lock all doors", "CLOSE ALL DOORS", "lock_all_doors"),
-        ("open all the doors", "OPEN ALL DOORS", "open_all_doors"),
-        ("open all doors", "OPEN ALL DOORS", "open_all_doors"),
-        ("open entrance door", "OPEN ENTRANCE DOOR", "open entrance door"),
-        ("open the entrance door", "OPEN ENTRANCE DOOR", "open entrance door"),
-        ("open the room door", "OPEN ROOM DOOR", "open room door"),
-        ("open room door", "OPEN ROOM DOOR", "open room door"),
-        ("unlock the room door", "OPEN ROOM DOOR", "open room door"),
-        ("unlock room door", "OPEN ROOM DOOR", "open room door"),
-        ("open the room", "OPEN ROOM DOOR", "open room door"),
-        ("open room", "OPEN ROOM DOOR", "open room door"),
-        ("open exit door", "OPEN EXIT DOOR", "open exit door"),
-        ("open the exit door", "OPEN EXIT DOOR", "open exit door"),
-        ("close entrance door", "CLOSE ENTRANCE DOOR", "close entrance door"),
-        ("close room door", "CLOSE ROOM DOOR", "close room door"),
-        ("close exit door", "CLOSE EXIT DOOR", "close exit door"),
-        ("close the exit door", "CLOSE EXIT DOOR", "close exit door"),
-        ("close door", "CLOSE DOOR", "close door"),
-        ("turn off the light", "TURN OFF LIGHT", "turn off light"),
-        ("turn off light", "TURN OFF LIGHT", "turn off light"),
-        ("lights off", "TURN OFF LIGHT", "turn off light"),
-        ("switch off the light", "TURN OFF LIGHT", "turn off light"),
-        ("turn on light", "TURN ON LIGHT", "turn on light"),
-        ("open light", "TURN ON LIGHT", "turn on light"),
-        ("lights on", "TURN ON LIGHT", "turn on light"),
-        ("open door", "OPEN DOOR", "open door"),
-    )
-
     try:
         with sr.Microphone() as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.8)
             audio = recognizer.listen(source, timeout=5, phrase_time_limit=5)
 
         text = recognizer.recognize_google(audio).lower().strip()
-        detected = None
-        esp32_command = None
-        for phrase, label, esp_cmd in voice_phrases:
-            if phrase in text:
-                detected = label
-                esp32_command = esp_cmd
-                break
-
-        if detected and esp32_command:
-            last_status["command"] = detected
-            last_status["message"] = f"Command Detected: {detected}"
-            if esp32_command == "turn on light":
-                control_state["light"] = "ON"
-            elif esp32_command == "turn off light":
-                control_state["light"] = "OFF"
-            elif esp32_command in ("open door", "open entrance door"):
-                control_state["door"] = "OPEN"
-            elif esp32_command == "open room door":
-                control_state["room_door"] = "OPEN"
-            elif esp32_command == "open exit door":
-                control_state["exit_door"] = "OPEN"
-            elif esp32_command == "open_all_doors":
-                control_state["door"] = "OPEN"
-                control_state["room_door"] = "OPEN"
-                control_state["exit_door"] = "OPEN"
-            elif esp32_command in ("close_all_doors", "lock_all_doors"):
-                control_state["door"] = "CLOSED"
-                control_state["room_door"] = "CLOSED"
-                control_state["exit_door"] = "CLOSED"
-            elif esp32_command == "close entrance door":
-                control_state["door"] = "CLOSED"
-            elif esp32_command == "close room door":
-                control_state["room_door"] = "CLOSED"
-            elif esp32_command == "close exit door":
-                control_state["exit_door"] = "CLOSED"
-            elif esp32_command == "close door":
-                control_state["door"] = "CLOSED"
-            call_esp32("/api/control", {"command": esp32_command})
-            return jsonify({"ok": True, "message": last_status["message"], "command": detected})
-
-        last_status["command"] = "UNKNOWN"
-        last_status["message"] = "No valid command detected."
-        return jsonify(
-            {
-                "ok": False,
-                "message": last_status["message"],
-                "command": "UNKNOWN",
-                "heard": text,
-            }
-        )
+        body, status = apply_voice_command_text(text)
+        return jsonify(body), status
 
     except sr.WaitTimeoutError:
         last_status["message"] = "Listening timeout. Please try again."
@@ -1156,6 +1204,12 @@ def admin_control():
     elif command == "turn off light":
         control_state["light"] = "OFF"
         last_status["command"] = "TURN OFF LIGHT"
+    elif command == "turn on light 2":
+        control_state["light_2"] = "ON"
+        last_status["command"] = "TURN ON LIGHT 2"
+    elif command == "turn off light 2":
+        control_state["light_2"] = "OFF"
+        last_status["command"] = "TURN OFF LIGHT 2"
     elif command == "open door":
         control_state["door"] = "OPEN"
         last_status["command"] = "OPEN DOOR"
@@ -1231,7 +1285,44 @@ def admin_esp32_test():
     if not session.get("is_admin"):
         return jsonify({"ok": False, "message": "Unauthorized"}), 401
     success, message = call_esp32("/api/ping")
-    return jsonify({"ok": success, "message": message})
+    fingerprint_ready = None
+    if success and message:
+        try:
+            data = json.loads(message)
+            fingerprint_ready = data.get("fingerprint_ready")
+            base = data.get("message", "ESP32 online")
+            if fingerprint_ready is True:
+                message = f"{base} — Fingerprint sensor: ready."
+            elif fingerprint_ready is False:
+                message = (
+                    f"{base} — Fingerprint sensor: NOT ready (UART/power/baud or boot timing; "
+                    "use Retry sensor handshake or check Thonny serial for AS608 lines)."
+                )
+            else:
+                message = base
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+    return jsonify(
+        {"ok": success, "message": message, "fingerprint_ready": fingerprint_ready}
+    )
+
+
+@app.route("/admin/fingerprint-reinit", methods=["POST"])
+def admin_fingerprint_reinit():
+    if not session.get("is_admin"):
+        return jsonify({"ok": False, "message": "Unauthorized"}), 401
+    ok, raw = call_esp32("/api/fingerprint/reinit", payload={}, timeout_sec=25.0)
+    if not ok:
+        return jsonify({"ok": False, "message": raw}), 502
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return jsonify({"ok": False, "message": raw or "Invalid JSON from ESP32"}), 502
+    ready = bool(data.get("fingerprint_ready"))
+    msg = data.get("message", raw)
+    if ready:
+        return jsonify({"ok": True, "message": msg, "fingerprint_ready": True})
+    return jsonify({"ok": False, "message": msg, "fingerprint_ready": False}), 503
 
 
 @app.route("/admin/camera-settings", methods=["GET", "POST"])

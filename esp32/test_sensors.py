@@ -6,7 +6,7 @@ Usage (Thonny / REPL):
   test_sensors.run_all()
 
 Optional: set TEST_FINGERPRINT = False below to skip AS608 (faster if not wired).
-Relays click, servos move, LED blinks — stand clear of moving parts.
+Relays click, servos move, LEDs blink — stand clear of moving parts.
 """
 
 from machine import ADC, PWM, Pin, UART
@@ -19,6 +19,7 @@ RELAY_ENTRANCE = Pin(23, Pin.OUT, value=1)
 RELAY_ROOM = Pin(22, Pin.OUT, value=1)
 RELAY_EXIT = Pin(21, Pin.OUT, value=1)
 LED_LIGHT = Pin(2, Pin.OUT, value=0)
+LED_LIGHT_2 = Pin(4, Pin.OUT, value=0)
 
 SERVO_ENTRANCE_PWM = PWM(Pin(18), freq=50)
 SERVO_EXIT_PWM = PWM(Pin(19), freq=50)
@@ -32,7 +33,12 @@ SMOKE_ADC.atten(ADC.ATTN_11DB)
 
 MOTION_FRONT = Pin(32, Pin.IN, Pin.PULL_DOWN)
 
-BUZZER_ALARM_PIN = Pin(25, Pin.OUT, value=0)
+# Match esp32/main.py buzzer settings
+BUZZER_GPIO = 25
+BUZZER_MODE = "pwm"  # "pwm" | "active"
+BUZZER_ACTIVE_HIGH = True
+BUZZER_PWM_FREQ = 4000
+BUZZER_PWM_DUTY = 512
 
 FP_UART_NR = 2
 FP_UART_TX = 17
@@ -68,8 +74,22 @@ def set_servo_angle(pwm, angle):
     pwm.duty(duty)
 
 
+def _buzzer_silence():
+    try:
+        b = PWM(Pin(BUZZER_GPIO), freq=int(BUZZER_PWM_FREQ), duty=0)
+        b.duty(0)
+        b.deinit()
+    except Exception:
+        pass
+    idle = 0 if BUZZER_ACTIVE_HIGH else 1
+    if (BUZZER_MODE or "pwm").lower() == "active":
+        Pin(BUZZER_GPIO, Pin.OUT, value=idle)
+    else:
+        Pin(BUZZER_GPIO, Pin.OUT, value=0)
+
+
 def safe_lock_all():
-    """Relays locked (active-high idle), servos at lock angle, LED off."""
+    """Relays locked (active-high idle), servos at lock angle, LEDs off."""
     set_servo_angle(SERVO_ENTRANCE_PWM, SERVO_LOCK)
     _relay_lock(RELAY_ENTRANCE)
     _relay_lock(RELAY_ROOM)
@@ -77,24 +97,43 @@ def safe_lock_all():
     time.sleep_ms(120)
     set_servo_angle(SERVO_EXIT_PWM, SERVO_LOCK)
     LED_LIGHT.value(0)
-    BUZZER_ALARM_PIN.value(0)
+    LED_LIGHT_2.value(0)
+    _buzzer_silence()
 
 
 def test_led():
-    print("[LED GPIO2] Blink 6x — watch the indicator / lamp driver.")
+    print("[LEDs] GPIO2 + GPIO4 — alternate blink 6x each — watch both indicators.")
     for i in range(6):
         LED_LIGHT.value(1)
+        LED_LIGHT_2.value(0)
         time.sleep_ms(200)
         LED_LIGHT.value(0)
+        LED_LIGHT_2.value(1)
         time.sleep_ms(200)
+    LED_LIGHT.value(0)
+    LED_LIGHT_2.value(0)
     print("  OK (visual check)")
 
 
 def test_buzzer():
-    print("[Buzzer GPIO25] Alarm pin HIGH ~0.4s (gas/smoke emergency uses same pin in main.py).")
-    BUZZER_ALARM_PIN.value(1)
-    time.sleep_ms(400)
-    BUZZER_ALARM_PIN.value(0)
+    mode = (BUZZER_MODE or "pwm").lower()
+    print(
+        "[Buzzer GPIO%d] mode=%s ~0.4s (same as main.py gas/smoke alarm)."
+        % (BUZZER_GPIO, mode)
+    )
+    _buzzer_silence()
+    if mode == "pwm":
+        b = PWM(Pin(BUZZER_GPIO), freq=int(BUZZER_PWM_FREQ), duty=0)
+        b.duty(max(0, min(1023, int(BUZZER_PWM_DUTY))))
+        time.sleep_ms(400)
+        b.duty(0)
+        b.deinit()
+    else:
+        p = Pin(BUZZER_GPIO, Pin.OUT, value=0 if BUZZER_ACTIVE_HIGH else 1)
+        p.value(1 if BUZZER_ACTIVE_HIGH else 0)
+        time.sleep_ms(400)
+        p.value(0 if BUZZER_ACTIVE_HIGH else 1)
+    _buzzer_silence()
     print("  OK (listen / meter)")
 
 

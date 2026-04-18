@@ -17,12 +17,13 @@ This wiring plan matches `esp32/main.py`.
 - `GPIO23` -> Relay IN1 (Entrance lock)
 - `GPIO22` -> Relay IN2 (Room lock)
 - `GPIO21` -> Relay IN3 (Exit lock)
-- `GPIO2`  -> LED light output
+- `GPIO2`  -> LED 1 (main light output)
+- `GPIO4`  -> LED 2 (second light / indicator)
 - `GPIO18` -> Servo 1 signal (PWM) — paired with **entrance** solenoid (`GPIO23` relay)
 - `GPIO19` -> Servo 2 signal (PWM) — paired with **exit** solenoid (`GPIO21` relay)
 - `GPIO34` -> Gas sensor analog output (ADC)
 - `GPIO35` -> Smoke sensor analog output (ADC)
-- `GPIO25` -> Gas/smoke **alarm buzzer** (active buzzer I+ or transistor base; HIGH = on while emergency)
+- `GPIO25` -> Gas/smoke **alarm buzzer** (passive piezo uses **PWM** in firmware; active buzzer uses steady HIGH — see buzzer notes below)
 - `GPIO32` -> HC-SR501 digital OUT (front / entrance PIR security)
 - `GPIO17` -> Fingerprint TX line (to module RX) via UART2
 - `GPIO16` -> Fingerprint RX line (to module TX) via UART2
@@ -38,12 +39,19 @@ For each door lock:
 Using `NO` means lock is off by default and energizes on command.  
 If your lock behavior is opposite, switch `NO`/`NC` and adjust logic in code.
 
-## LED Light Wiring
+## LED wiring (two outputs)
 
-- `GPIO2` -> 220R resistor -> LED anode (+)
+**LED 1 (main)**
+
+- `GPIO2` -> 220Ω resistor -> LED anode (+)
 - LED cathode (-) -> GND
 
-If controlling a bigger lamp, use relay/MOSFET driver instead of direct GPIO.
+**LED 2 (secondary)**
+
+- `GPIO4` -> 220Ω resistor -> second LED anode (+)
+- LED cathode (-) -> GND
+
+If controlling a bigger lamp, use a relay or MOSFET driver instead of driving the load from GPIO.
 
 ## Servo wiring (two locks)
 
@@ -79,7 +87,7 @@ Adjust sensitivity in software in `esp32/main.py`:
 
 **Emergency behavior:** If **either** reading is **≥** its threshold, the firmware calls **`open_all_doors()`** (all three relays plus entrance and exit servos) and turns **`GPIO25` buzzer ON**. When readings drop **below** both thresholds, the buzzer turns **OFF**. That runs on every main-loop pass, at the start of each HTTP request, again after each `POST /api/control` (so a remote “lock” cannot override an active alarm), and the same logic feeds `GET /api/ping` (`"emergency": true`). Tune thresholds so normal air does not trip; allow **~1–2 minutes** warm-up after power-on before trusting readings.
 
-**Buzzer (`GPIO25`):** Use a **3.3V active buzzer** (module with built-in oscillator) **I+** → `GPIO25`, **GND** → GND, or drive a **5V buzzer / piezo** through an **NPN transistor** (ESP32 GPIO → resistor → base, emitter GND, buzzer + supply to collector). Set **`USE_BUZZER_ALARM = False`** in `esp32/main.py` if you do not wire a buzzer.
+**Buzzer (`GPIO25`):** Firmware defaults to **`BUZZER_MODE = "pwm"`** (default **~4 kHz** in `main.py`) so a **passive** piezo buzzer makes sound; a steady GPIO HIGH does nothing on passive parts. If it still sounds weak, try **`BUZZER_PWM_FREQ`** between **~2500–4500 Hz** (resonance varies by part). **`BUZZER_PWM_DUTY`** should stay near **half of 1023** (~512) for a passive buzzer—nearly full duty is mostly DC and gets quieter. For **more volume** than 3.3 V GPIO can give, use **5 V** and an **NPN transistor** (GPIO → resistor → base, emitter GND, buzzer + to supply, buzzer − to collector). If your module is an **active** buzzer (built-in oscillator), set **`BUZZER_MODE = "active"`** in `esp32/main.py`. Wire **signal** → `GPIO25`, **GND** → GND. If sound is inverted (only works when GPIO is LOW), set **`BUZZER_ACTIVE_HIGH = False`** in **active** mode. Set **`USE_BUZZER_ALARM = False`** if no buzzer. Run **`test_sensors.test_buzzer()`** after changing mode to verify wiring.
 
 You can also tweak the **AO vs DO** behavior on the module: the pot adjusts when **DO** flips; **AO** still reflects the raw analog level used by the ESP32.
 
@@ -159,8 +167,8 @@ Admin portal stores ESP32 URL and API key.
 ESP32 exposes:
 - `GET /api/ping` (JSON includes `gas`, `smoke`, `emergency`, `motion`)
 - `POST /api/control` with JSON body:
-  - `{"command":"turn on light"}`
-  - `{"command":"turn off light"}`
+  - `{"command":"turn on light"}` / `{"command":"turn off light"}` (GPIO2)
+  - `{"command":"turn on light 2"}` / `{"command":"turn off light 2"}` (GPIO4)
   - `{"command":"open door"}` or `{"command":"open entrance door"}`
   - `{"command":"open room door"}`
   - `{"command":"open exit door"}`
@@ -182,7 +190,7 @@ import test_sensors
 test_sensors.run_all()
 ```
 
-That script exercises **LED**, **buzzer GPIO25**, **three relays**, **two servos**, **gas/smoke ADC**, **PIR GPIO32**, and optionally **AS608 UART** (`TEST_FINGERPRINT`) and **WiFi** (`TEST_WIFI`). It ends in a **safe locked** state. Keep hands clear of servos and solenoids while it runs.
+That script exercises **both LEDs (GPIO2 / GPIO4)**, **buzzer GPIO25**, **three relays**, **two servos**, **gas/smoke ADC**, **PIR GPIO32**, and optionally **AS608 UART** (`TEST_FINGERPRINT`) and **WiFi** (`TEST_WIFI`). It ends in a **safe locked** state. Keep hands clear of servos and solenoids while it runs.
 
 Fingerprint only (verbose UART + hex dumps): upload `esp32/test_fingerprint.py` and run:
 

@@ -24,6 +24,7 @@ RELAY_ENTRANCE = Pin(23, Pin.OUT, value=1)  # active-low relay
 RELAY_ROOM = Pin(22, Pin.OUT, value=1)      # active-low relay
 RELAY_EXIT = Pin(21, Pin.OUT, value=1)      # active-low relay
 LED_LIGHT = Pin(2, Pin.OUT, value=0)
+LED_LIGHT_2 = Pin(4, Pin.OUT, value=0)
 
 # Servos: entrance + exit (room is relay-only)
 SERVO_ENTRANCE_PWM = PWM(Pin(18), freq=50)
@@ -35,10 +36,39 @@ SMOKE_ADC = ADC(Pin(35))  # smoke sensor analog
 GAS_ADC.atten(ADC.ATTN_11DB)
 SMOKE_ADC.atten(ADC.ATTN_11DB)
 
-# Active buzzer (I+ to GPIO, GND common) or NPN transistor: HIGH = alarm on.
-# Set USE_BUZZER_ALARM False if no buzzer wired.
+# Buzzer alarm (gas/smoke emergency). Two common hardware types:
+#   - *Passive* piezo: needs a tone — use BUZZER_MODE = "pwm" (default below).
+#   - *Active* module (built-in oscillator): steady DC — use BUZZER_MODE = "active".
+# If wired to transistor that pulls LOW to sound, set BUZZER_ACTIVE_HIGH = False (active mode only).
+# Change BUZZER_GPIO if you use another pin (avoid pins already used above).
 USE_BUZZER_ALARM = True
-BUZZER_ALARM_PIN = Pin(25, Pin.OUT, value=0) if USE_BUZZER_ALARM else None
+BUZZER_GPIO = 25
+BUZZER_MODE = "pwm"  # "pwm" | "active"
+BUZZER_ACTIVE_HIGH = True
+# Passive piezos: loudest with ~50% duty (≈512). Higher duty → more DC → often quieter.
+# Tune BUZZER_PWM_FREQ (try 2500–4500 Hz) to match your part — wrong freq sounds weak.
+BUZZER_PWM_FREQ = 4000
+BUZZER_PWM_DUTY = 512
+
+_buzzer_pwm = None
+_buzzer_out = None
+
+
+def _buzzer_init():
+    global _buzzer_pwm, _buzzer_out
+    _buzzer_pwm = None
+    _buzzer_out = None
+    if not USE_BUZZER_ALARM:
+        return
+    mode = (BUZZER_MODE or "pwm").lower()
+    if mode == "pwm":
+        _buzzer_pwm = PWM(Pin(BUZZER_GPIO), freq=int(BUZZER_PWM_FREQ), duty=0)
+    else:
+        idle = 0 if BUZZER_ACTIVE_HIGH else 1
+        _buzzer_out = Pin(BUZZER_GPIO, Pin.OUT, value=idle)
+
+
+_buzzer_init()
 
 # HC-SR501 front-of-house PIR: HIGH = motion (use 3.3V-safe OUT or a divider if module outputs 5V).
 # If detection feels weak: increase SENS pot, shorten time-delay pot, use H (retrigger) jumper — see ESP32_WIRING.md.
@@ -161,6 +191,8 @@ def apply_command(command):
         "open_room_door": "open room door",
         "close_entrance_door": "close entrance door",
         "open_entrance_door": "open entrance door",
+        "turn_on_light_2": "turn on light 2",
+        "turn_off_light_2": "turn off light 2",
     }
     cmd = _underscore.get(cmd, cmd)
     _aliases = {
@@ -171,12 +203,22 @@ def apply_command(command):
         "open all the doors": "open_all_doors",
     }
     cmd = _aliases.get(cmd, cmd)
+    if cmd == "turn on light two":
+        cmd = "turn on light 2"
+    elif cmd == "turn off light two":
+        cmd = "turn off light 2"
     if cmd == "turn on light":
         LED_LIGHT.value(1)
         return True, "Light turned ON"
     if cmd == "turn off light":
         LED_LIGHT.value(0)
         return True, "Light turned OFF"
+    if cmd == "turn on light 2":
+        LED_LIGHT_2.value(1)
+        return True, "Light 2 turned ON"
+    if cmd == "turn off light 2":
+        LED_LIGHT_2.value(0)
+        return True, "Light 2 turned OFF"
     if cmd in ("open door", "open entrance door"):
         _relay_open(RELAY_ENTRANCE)
         set_servo_angle(SERVO_ENTRANCE_PWM, SERVO_UNLOCK_ANGLE)
@@ -214,13 +256,21 @@ def apply_command(command):
 
 
 def buzzer_alarm_on():
-    if BUZZER_ALARM_PIN is not None:
-        BUZZER_ALARM_PIN.value(1)
+    if not USE_BUZZER_ALARM:
+        return
+    if _buzzer_pwm is not None:
+        _buzzer_pwm.duty(max(0, min(1023, int(BUZZER_PWM_DUTY))))
+    elif _buzzer_out is not None:
+        _buzzer_out.value(1 if BUZZER_ACTIVE_HIGH else 0)
 
 
 def buzzer_alarm_off():
-    if BUZZER_ALARM_PIN is not None:
-        BUZZER_ALARM_PIN.value(0)
+    if not USE_BUZZER_ALARM:
+        return
+    if _buzzer_pwm is not None:
+        _buzzer_pwm.duty(0)
+    elif _buzzer_out is not None:
+        _buzzer_out.value(0 if BUZZER_ACTIVE_HIGH else 1)
 
 
 def check_emergency():
@@ -283,23 +333,43 @@ def fp_read_packet(timeout_ms):
 
 def fp_verify_password():
     # VfyPwd (0x13); default password is usually 0x00000000 (change if you set one in software).
-    last_pt = None
-    for baud in FP_UART_BAUDS:
-        try:
-            fp_uart.init(baudrate=baud, tx=FP_UART_TX, rx=FP_UART_RX)
-        except Exception:
-            continue
-        time.sleep_ms(250)
-        fp_uart.read()
-        for _ in range(4):
-            packet_type, payload = fp_send_command(0x13, b"\x00\x00\x00\x00", timeout_ms=1600)
-            last_pt = packet_type
-            if packet_type == 0x07 and len(payload) > 0 and payload[0] == 0x00:
-                print("AS608 OK at baud", baud)
-                return True
-            time.sleep_ms(120)
-        print("AS608 no valid reply at baud", baud, "last_type=", packet_type, "ack=", payload[:1] if payload else b"")
-    print("AS608 check: wiring TX/RX (ESP TX->sensor RX, ESP RX<-sensor TX), 3.3V logic, power, baud. Last pkt type=", last_pt)
+    overall_last_pt = None
+    for attempt in range(2):
+        if attempt:
+            print("AS608: retry handshake after 2s (sensor may need warm-up)...")
+            time.sleep_ms(2000)
+        last_pt = None
+        for baud in FP_UART_BAUDS:
+            try:
+                fp_uart.init(baudrate=baud, tx=FP_UART_TX, rx=FP_UART_RX)
+            except Exception as exc:
+                print("AS608 UART init failed at baud", baud, ":", exc)
+                continue
+            time.sleep_ms(250)
+            fp_uart.read()
+            packet_type = None
+            payload = b""
+            for _ in range(4):
+                packet_type, payload = fp_send_command(0x13, b"\x00\x00\x00\x00", timeout_ms=1600)
+                last_pt = packet_type
+                overall_last_pt = packet_type
+                if packet_type == 0x07 and len(payload) > 0 and payload[0] == 0x00:
+                    print("AS608 OK at baud", baud)
+                    return True
+                time.sleep_ms(120)
+            print(
+                "AS608 no valid reply at baud",
+                baud,
+                "last_type=",
+                packet_type,
+                "ack=",
+                payload[:1] if payload else b"",
+            )
+        print(
+            "AS608 check: wiring TX/RX (ESP TX->sensor RX, ESP RX<-sensor TX), 3.3V logic, power, baud. Last pkt type=",
+            last_pt,
+        )
+    print("AS608: failed after 2 attempts; last pkt type=", overall_last_pt)
     return False
 
 
@@ -454,6 +524,7 @@ def parse_request(raw):
 
 
 def handle_request(conn, raw):
+    global fp_ready
     method, path, headers, body = parse_request(raw)
     emergency, gas, smoke = check_emergency()
     api_key = headers.get("x-api-key", "")
@@ -473,6 +544,7 @@ def handle_request(conn, raw):
                 "smoke": smoke,
                 "emergency": emergency,
                 "motion": motion,
+                "fingerprint_ready": bool(fp_ready),
             },
         )
         return
@@ -527,6 +599,31 @@ def handle_request(conn, raw):
             http_response(conn, 400, {"ok": False, "message": msg, "page_id": page_id})
         return
 
+    if method == "POST" and path == "/api/fingerprint/reinit":
+        if not FP_USE_SENSOR:
+            http_response(
+                conn,
+                200,
+                {
+                    "ok": True,
+                    "fingerprint_ready": False,
+                    "message": "Fingerprint disabled in firmware (FP_USE_SENSOR=False)",
+                },
+            )
+            return
+        fp_uart.read()
+        fp_ready = fp_verify_password()
+        http_response(
+            conn,
+            200,
+            {
+                "ok": True,
+                "fingerprint_ready": fp_ready,
+                "message": "Sensor ready" if fp_ready else "Handshake failed — check UART, power, TX/RX; see ESP32 serial log",
+            },
+        )
+        return
+
     http_response(conn, 404, {"ok": False, "message": "Not found"})
 
 
@@ -575,7 +672,7 @@ def start_server():
 connect_wifi()
 lock_all_doors()
 if FP_USE_SENSOR:
-    time.sleep_ms(500)
+    time.sleep_ms(1000)
     fp_ready = fp_verify_password()
 else:
     fp_ready = False

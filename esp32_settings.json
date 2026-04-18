@@ -1,5 +1,6 @@
 {
-  "base_url": "http://192.168.1.29",
+  "base_url": "http://192.168.1.22",
   "api_key": "smarthouse-key",
-  "timeout_sec": 2.0
+  "timeout_sec": 2.0,
+  "motion_poll_sec": 0.65
 }

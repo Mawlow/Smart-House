@@ -58,6 +58,72 @@
       return { ok: response.ok, payload };
     }
 
+    function getSpeechRecognitionCtor() {
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    }
+
+    async function runVoiceCommandFlow() {
+      const SR = getSpeechRecognitionCtor();
+      if (SR) {
+        setMessage("Listening on this device — speak your command...");
+        voiceBtn.disabled = true;
+        let finished = false;
+        const release = () => {
+          if (finished) return;
+          finished = true;
+          voiceBtn.disabled = false;
+        };
+        const rec = new SR();
+        rec.lang = "en-US";
+        rec.interimResults = false;
+        rec.maxAlternatives = 1;
+        rec.onerror = (ev) => {
+          const err = (ev && ev.error) || "unknown";
+          const hint =
+            err === "not-allowed"
+              ? " Allow microphone access for this site."
+              : err === "no-speech"
+                ? " No speech heard."
+                : "";
+          setMessage(`Voice error: ${err}.${hint}`);
+          release();
+        };
+        rec.onend = () => release();
+        rec.onresult = async (ev) => {
+          let transcript = "";
+          try {
+            transcript = ev.results[0][0].transcript;
+          } catch (_e) {
+            transcript = "";
+          }
+          try {
+            const result = await postJson("/voice_command_text", { text: transcript });
+            const p = result.payload || {};
+            let msg = p.message || "Voice finished.";
+            if (!result.ok && p.heard) msg += ` Heard: "${p.heard}"`;
+            setMessage(msg);
+            await refreshStatus();
+          } finally {
+            release();
+          }
+        };
+        try {
+          rec.start();
+        } catch (_err) {
+          setMessage("Could not start voice recognition. Try HTTPS or localhost, or allow the mic.");
+          release();
+        }
+        return;
+      }
+      setMessage("Listening via server microphone (speak near the PC running this app)...");
+      const result = await postJson("/start_voice_command");
+      const p = result.payload || {};
+      let msg = p.message || "Voice finished.";
+      if (!result.ok && p.heard) msg += ` Heard: "${p.heard}"`;
+      setMessage(msg);
+      refreshStatus();
+    }
+
     async function refreshStatus() {
       try {
         const response = await fetch("/status");
@@ -92,11 +158,8 @@
       refreshStatus();
     });
 
-    voiceBtn.addEventListener("click", async () => {
-      setMessage("Listening for voice command...");
-      const result = await postJson("/start_voice_command");
-      setMessage(result.payload.message || "Voice command finished.");
-      refreshStatus();
+    voiceBtn.addEventListener("click", () => {
+      runVoiceCommandFlow();
     });
 
     refreshStatus();

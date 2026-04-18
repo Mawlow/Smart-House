@@ -6,103 +6,213 @@
   <title>Admin Portal</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
-<body class="app-bg">
-  <main class="layout">
+<body class="app-bg admin-page">
+  <main class="layout admin-shell">
     <header class="topbar">
       <div>
         <p class="kicker">Smart Home</p>
         <h1>Admin Portal</h1>
       </div>
       <div class="buttons topbar-actions">
-        <button type="button" id="notif-bell-btn" class="notif-bell" title="Security alerts" aria-label="Security alerts">
-          <svg class="notif-bell-svg" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-            <path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
-          </svg>
-          <span id="notif-badge" class="notif-badge is-hidden">0</span>
-        </button>
+        <div class="notif-dropdown-wrap" id="notif-dropdown-wrap">
+          <button
+            type="button"
+            id="notif-bell-btn"
+            class="notif-bell"
+            title="Security alerts"
+            aria-label="Security alerts"
+            aria-expanded="false"
+            aria-haspopup="true"
+            aria-controls="notif-dropdown"
+          >
+            <svg class="notif-bell-svg" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+              <path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+            </svg>
+            <span id="notif-badge" class="notif-badge is-hidden" aria-hidden="true">0</span>
+          </button>
+          <div
+            id="notif-dropdown"
+            class="notif-dropdown"
+            role="region"
+            aria-label="Security alerts list"
+            hidden
+          >
+            <div class="notif-dropdown-header">
+              <span class="notif-dropdown-title">Security alerts</span>
+              <span class="notif-dropdown-meta muted" id="notif-dropdown-meta"></span>
+            </div>
+            <div id="notif-dropdown-list" class="notif-dropdown-list"></div>
+            <button type="button" class="notif-dropdown-viewall" id="notif-view-all">
+              View full list below
+            </button>
+          </div>
+        </div>
         <a class="mini-link" href="{{ url_for('door_portal') }}">Go to Door</a>
         <button id="logout-btn" class="action-btn danger small">Logout</button>
       </div>
     </header>
 
-    <section class="admin-grid">
-      <article class="glass-card">
-        <h2>Face Registration</h2>
-        <div class="form-row">
-          <input id="username" type="text" placeholder="Enter username" />
-          <button id="register-btn" class="action-btn primary">Register Face</button>
-          <button id="fp-register-btn" class="action-btn secondary">Register Fingerprint</button>
+    <section class="admin-grid admin-dashboard" aria-label="Admin sections">
+      <article class="glass-card admin-card admin-card--media">
+        <h2 class="admin-card__title">Face Registration</h2>
+        <p class="admin-card__hint muted">Use the username field for both face samples and fingerprint enrollment.</p>
+        <div class="form-row admin-form-grid admin-form-grid--register">
+          <input id="username" type="text" placeholder="Enter username" autocomplete="username" />
+          <button type="button" id="register-btn" class="action-btn primary">Register Face</button>
+          <button type="button" id="fp-register-btn" class="action-btn secondary">Register Fingerprint</button>
         </div>
-        <div class="video-wrap">
+        <div class="video-wrap admin-video-wrap">
           <video id="video-feed" autoplay playsinline muted></video>
         </div>
       </article>
 
-      <article class="glass-card">
-        <h2>Registered Faces</h2>
-        <ul id="users-list" class="list"></ul>
+      <article class="glass-card admin-card">
+        <h2 class="admin-card__title">Registered Faces</h2>
+        <ul id="users-list" class="list admin-list"></ul>
       </article>
 
-      <article class="glass-card">
-        <h2>Registered fingerprints (ESP32)</h2>
-        <p class="muted">Same username field as above. Enrollment runs on the AS608/JM-101B: place the <strong>same finger twice</strong> when you click (ESP32 blocks ~2 minutes). Slots 0–161; Pi stores username → slot.</p>
-        <ul id="fp-users-list" class="list"></ul>
+      <article class="glass-card admin-card">
+        <h2 class="admin-card__title">Fingerprints (ESP32)</h2>
+        <p class="admin-prose muted">Place the <strong>same finger twice</strong> when enrolling (up to ~2 min). Slots 0–161; this server stores username → slot.</p>
+        <p class="admin-prose muted">If the sensor did nothing after boot, power it before the ESP32 or run <strong>Retry sensor handshake</strong> (or ESP32 <strong>Test connection</strong> shows fingerprint status).</p>
+        <button type="button" id="fp-reinit-btn" class="action-btn ghost small">Retry sensor handshake</button>
+        <ul id="fp-users-list" class="list admin-list"></ul>
       </article>
 
-      <article class="glass-card" id="security-alerts-section">
-        <h2>Security Alerts</h2>
-        <p class="muted">Unauthorized door attempts (with snapshot), front PIR motion (HC-SR501), and gas/smoke emergency (ESP32 opens all doors — see <code>ESP32_WIRING.md</code>). For <strong>gas/smoke</strong> alerts, use <strong>Acknowledge &amp; lock all doors</strong> after the area is safe; the ESP32 buzzer stops when readings fall below threshold.</p>
-        <button id="clear-alerts-btn" class="action-btn secondary">Clear Alerts</button>
-        <div id="alerts-list" class="alerts"></div>
-      </article>
-
-      <article class="glass-card">
-        <h2>Home Controls</h2>
-        <div class="buttons">
-          <button class="action-btn primary" data-cmd="turn on light">Turn On Light</button>
-          <button class="action-btn secondary" data-cmd="turn off light">Turn Off Light</button>
-          <button class="action-btn primary" data-cmd="open_all_doors">Open All Doors</button>
-          <button class="action-btn primary" data-cmd="open entrance door">Open Entrance</button>
-          <button class="action-btn primary" data-cmd="open room door">Open Room</button>
-          <button class="action-btn primary" data-cmd="open exit door">Open Exit</button>
-          <button class="action-btn secondary" data-cmd="close_all_doors">Close All Doors</button>
-          <button class="action-btn secondary" data-cmd="close room door">Close Room</button>
-          <button class="action-btn secondary" data-cmd="close exit door">Close Exit</button>
-          <button class="action-btn secondary" data-cmd="open door">Open Door (entrance)</button>
-          <button class="action-btn secondary" data-cmd="close door">Close Entrance</button>
-          <button id="voice-btn" class="action-btn ghost">Start Voice Command</button>
+      <article class="glass-card admin-card admin-card--wide" id="security-alerts-section">
+        <div class="admin-card__head">
+          <h2 class="admin-card__title">Security Alerts</h2>
+          <button type="button" id="clear-alerts-btn" class="action-btn secondary small">Clear all</button>
         </div>
-        <p class="status-text">Message: <span id="main-message">System ready</span></p>
-        <p class="status-text">Access: <span id="access-status">IDLE</span></p>
-        <p class="status-text">Command: <span id="command-status">NONE</span></p>
-        <p class="status-text">Light: <span id="light-status">OFF</span> | Entrance: <span id="door-status">CLOSED</span> | Room: <span id="room-door-status">CLOSED</span> | Exit: <span id="exit-door-status">CLOSED</span></p>
+        <p class="admin-prose muted">Unauthorized attempts (with snapshot), PIR motion, and gas/smoke emergencies. For gas/smoke, <strong>Acknowledge &amp; lock all doors</strong> when safe — buzzer clears when ADC drops. See <code>ESP32_WIRING.md</code>.</p>
+        <div id="alerts-list" class="alerts admin-alerts"></div>
       </article>
 
-      <article class="glass-card">
-        <h2>Camera (USB on Pi)</h2>
-        <p class="muted">Video is captured on the machine running Flask. Open this site on the Pi only after you run <code>python app.py</code> on the Pi. USB webcams are often index <strong>1</strong> or <strong>2</strong> if the Pi camera is <strong>0</strong>.</p>
-        <div class="form-row">
-          <input id="camera-index" type="number" min="0" max="10" step="1" placeholder="Camera index (0, 1, 2...)" />
-          <button id="save-camera-btn" class="action-btn primary">Apply Camera</button>
-          <button id="probe-camera-btn" class="action-btn ghost">Probe Indexes</button>
+      <article class="glass-card admin-card home-controls-card admin-card--wide">
+        <header class="home-controls-header">
+          <h2 class="admin-card__title">Home Controls</h2>
+          <p class="home-controls-sub muted">ESP32 relays, servos, and two light outputs. Commands need a configured ESP32 URL in settings.</p>
+        </header>
+
+        <div class="control-panels">
+          <section class="control-panel" aria-labelledby="hc-light-label">
+            <h3 class="control-panel__label" id="hc-light-label">Lighting</h3>
+            <div class="control-grid control-grid--light">
+              <button type="button" class="control-btn control-btn--light-on" data-cmd="turn on light" title="Turn on light (GPIO2)">
+                <span class="control-btn__icon" aria-hidden="true">&#9679;</span>
+                Light 1 on
+              </button>
+              <button type="button" class="control-btn control-btn--light-off" data-cmd="turn off light" title="Turn off light (GPIO2)">
+                <span class="control-btn__icon" aria-hidden="true">&#9675;</span>
+                Light 1 off
+              </button>
+              <button type="button" class="control-btn control-btn--light-on" data-cmd="turn on light 2" title="Turn on light 2 (GPIO4)">
+                <span class="control-btn__icon" aria-hidden="true">&#9679;</span>
+                Light 2 on
+              </button>
+              <button type="button" class="control-btn control-btn--light-off" data-cmd="turn off light 2" title="Turn off light 2 (GPIO4)">
+                <span class="control-btn__icon" aria-hidden="true">&#9675;</span>
+                Light 2 off
+              </button>
+            </div>
+          </section>
+
+          <section class="control-panel" aria-labelledby="hc-open-label">
+            <h3 class="control-panel__label" id="hc-open-label">Open doors</h3>
+            <div class="control-grid control-grid--doors">
+              <button type="button" class="control-btn control-btn--open control-btn--emphasis" data-cmd="open_all_doors">All doors</button>
+              <button type="button" class="control-btn control-btn--open" data-cmd="open entrance door">Entrance</button>
+              <button type="button" class="control-btn control-btn--open" data-cmd="open room door">Room</button>
+              <button type="button" class="control-btn control-btn--open" data-cmd="open exit door">Exit</button>
+              <button type="button" class="control-btn control-btn--open control-btn--compact" data-cmd="open door">Entrance (alt)</button>
+            </div>
+          </section>
+
+          <section class="control-panel" aria-labelledby="hc-close-label">
+            <h3 class="control-panel__label" id="hc-close-label">Lock &amp; close</h3>
+            <div class="control-grid control-grid--doors">
+              <button type="button" class="control-btn control-btn--close control-btn--emphasis" data-cmd="close_all_doors">All doors</button>
+              <button type="button" class="control-btn control-btn--close" data-cmd="close door">Entrance</button>
+              <button type="button" class="control-btn control-btn--close" data-cmd="close room door">Room</button>
+              <button type="button" class="control-btn control-btn--close" data-cmd="close exit door">Exit</button>
+              <button type="button" class="control-btn control-btn--close control-btn--compact" data-cmd="close entrance door">Entrance (alt)</button>
+            </div>
+          </section>
+
+          <section class="control-panel control-panel--voice" aria-labelledby="hc-voice-label">
+            <h3 class="control-panel__label" id="hc-voice-label">Voice</h3>
+            <button type="button" id="voice-btn" class="control-btn control-btn--voice">Start voice command</button>
+          </section>
         </div>
-        <p class="status-text">Active index: <span id="camera-index-display">—</span> | Open: <span id="camera-ok-display">—</span></p>
-        <p class="status-text" id="camera-probe-result"></p>
+
+        <footer class="home-status-panel" aria-label="System status">
+          <div class="home-status-grid">
+            <div class="status-field">
+              <span class="status-field__label">Message</span>
+              <span class="status-field__value" id="main-message">System ready</span>
+            </div>
+            <div class="status-field">
+              <span class="status-field__label">Access</span>
+              <span class="status-field__value status-field__value--chip" id="access-status">IDLE</span>
+            </div>
+            <div class="status-field">
+              <span class="status-field__label">Command</span>
+              <span class="status-field__value status-field__value--muted" id="command-status">NONE</span>
+            </div>
+          </div>
+          <div class="home-device-chips" role="list">
+            <div class="device-chip" role="listitem">
+              <span class="device-chip__name">Light 1</span>
+              <span class="device-chip__state" id="light-status">OFF</span>
+            </div>
+            <div class="device-chip" role="listitem">
+              <span class="device-chip__name">Light 2</span>
+              <span class="device-chip__state" id="light-2-status">OFF</span>
+            </div>
+            <div class="device-chip" role="listitem">
+              <span class="device-chip__name">Entrance</span>
+              <span class="device-chip__state" id="door-status">CLOSED</span>
+            </div>
+            <div class="device-chip" role="listitem">
+              <span class="device-chip__name">Room</span>
+              <span class="device-chip__state" id="room-door-status">CLOSED</span>
+            </div>
+            <div class="device-chip" role="listitem">
+              <span class="device-chip__name">Exit</span>
+              <span class="device-chip__state" id="exit-door-status">CLOSED</span>
+            </div>
+          </div>
+        </footer>
       </article>
 
-      <article class="glass-card">
-        <h2>ESP32 Settings</h2>
-        <div class="form-row">
-          <input id="esp32-url" type="text" placeholder="ESP32 host (e.g. 192.168.1.50 — http:// added if missing)" />
-          <input id="esp32-key" type="text" placeholder="API Key" />
-          <input id="esp32-timeout" type="number" step="0.5" min="0.5" max="10" placeholder="Timeout sec" />
-          <input id="esp32-motion-poll" type="number" step="0.05" min="0.35" max="3" placeholder="Motion poll sec" title="How often the server asks the ESP32 for PIR state (lower = snappier alerts)" />
+      <article class="glass-card admin-card">
+        <h2 class="admin-card__title">Camera (USB)</h2>
+        <p class="admin-prose muted">Video is captured on the machine running Flask. USB webcams are often index <strong>1</strong> or <strong>2</strong> if the Pi camera is <strong>0</strong>. Run <code>python app.py</code> on the Pi when using a Pi camera.</p>
+        <div class="form-row admin-form-grid admin-form-grid--camera">
+          <input id="camera-index" type="number" min="0" max="10" step="1" placeholder="Camera index (0, 1, 2…)" />
+          <button type="button" id="save-camera-btn" class="action-btn primary">Apply</button>
+          <button type="button" id="probe-camera-btn" class="action-btn ghost">Probe</button>
         </div>
-        <div class="buttons">
-          <button id="save-esp32-btn" class="action-btn primary">Save ESP32 Settings</button>
-          <button id="test-esp32-btn" class="action-btn ghost">Test ESP32 Connection</button>
+        <div class="admin-inline-status">
+          <span class="admin-pill"><span class="admin-pill__k">Index</span> <span id="camera-index-display">—</span></span>
+          <span class="admin-pill"><span class="admin-pill__k">Open</span> <span id="camera-ok-display">—</span></span>
         </div>
-        <p class="muted">Front PIR (HC-SR501 on <code>GPIO32</code>): server polls at <strong>Motion poll sec</strong> and adds one <strong>Security Alert</strong> per <em>new</em> motion edge (not every second while you stand there). If the PIR feels dull, turn up <strong>sensitivity</strong> on the module and shorten the <strong>time-delay</strong> pot — see <code>ESP32_WIRING.md</code>.</p>
+        <p class="admin-probe-result muted" id="camera-probe-result"></p>
+      </article>
+
+      <article class="glass-card admin-card">
+        <h2 class="admin-card__title">ESP32</h2>
+        <div class="form-row admin-form-grid admin-form-grid--esp">
+          <input id="esp32-url" type="text" placeholder="Host or IP (http:// added if missing)" autocomplete="off" />
+          <input id="esp32-key" type="text" placeholder="API key" autocomplete="off" />
+          <input id="esp32-timeout" type="number" step="0.5" min="0.5" max="10" placeholder="Timeout (sec)" />
+          <input id="esp32-motion-poll" type="number" step="0.05" min="0.35" max="3" placeholder="Motion poll (sec)" title="How often the server polls ESP32 for PIR" />
+        </div>
+        <div class="admin-btn-row">
+          <button type="button" id="save-esp32-btn" class="action-btn primary">Save settings</button>
+          <button type="button" id="test-esp32-btn" class="action-btn ghost">Test connection</button>
+        </div>
+        <p class="admin-prose muted">PIR on <code>GPIO32</code>: one alert per <em>new</em> motion edge. Tune HC-SR501 <strong>sensitivity</strong> and <strong>delay</strong> if needed — <code>ESP32_WIRING.md</code>.</p>
       </article>
     </section>
   </main>
@@ -111,18 +221,25 @@
     const usernameInput = document.getElementById("username");
     const registerBtn = document.getElementById("register-btn");
     const fpRegisterBtn = document.getElementById("fp-register-btn");
+    const fpReinitBtn = document.getElementById("fp-reinit-btn");
     const usersList = document.getElementById("users-list");
     const fpUsersList = document.getElementById("fp-users-list");
     const alertsList = document.getElementById("alerts-list");
     const clearAlertsBtn = document.getElementById("clear-alerts-btn");
     const notifBellBtn = document.getElementById("notif-bell-btn");
     const notifBadge = document.getElementById("notif-badge");
+    const notifDropdownWrap = document.getElementById("notif-dropdown-wrap");
+    const notifDropdown = document.getElementById("notif-dropdown");
+    const notifDropdownList = document.getElementById("notif-dropdown-list");
+    const notifDropdownMeta = document.getElementById("notif-dropdown-meta");
+    const notifViewAll = document.getElementById("notif-view-all");
     const voiceBtn = document.getElementById("voice-btn");
     const logoutBtn = document.getElementById("logout-btn");
     const mainMessage = document.getElementById("main-message");
     const accessStatus = document.getElementById("access-status");
     const commandStatus = document.getElementById("command-status");
     const lightStatus = document.getElementById("light-status");
+    const light2Status = document.getElementById("light-2-status");
     const doorStatus = document.getElementById("door-status");
     const roomDoorStatus = document.getElementById("room-door-status");
     const exitDoorStatus = document.getElementById("exit-door-status");
@@ -153,14 +270,90 @@
       return { ok: response.ok, payload };
     }
 
+    function getSpeechRecognitionCtor() {
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    }
+
+    async function runVoiceCommandFlow() {
+      const SR = getSpeechRecognitionCtor();
+      if (SR) {
+        setMessage("Listening on this device — speak your command...");
+        voiceBtn.disabled = true;
+        let finished = false;
+        const release = () => {
+          if (finished) return;
+          finished = true;
+          voiceBtn.disabled = false;
+        };
+        const rec = new SR();
+        rec.lang = "en-US";
+        rec.interimResults = false;
+        rec.maxAlternatives = 1;
+        rec.onerror = (ev) => {
+          const err = (ev && ev.error) || "unknown";
+          const hint =
+            err === "not-allowed"
+              ? " Allow microphone access for this site."
+              : err === "no-speech"
+                ? " No speech heard."
+                : "";
+          setMessage(`Voice error: ${err}.${hint}`);
+          release();
+        };
+        rec.onend = () => release();
+        rec.onresult = async (ev) => {
+          let transcript = "";
+          try {
+            transcript = ev.results[0][0].transcript;
+          } catch (_e) {
+            transcript = "";
+          }
+          try {
+            const result = await postJson("/voice_command_text", { text: transcript });
+            const p = result.payload || {};
+            let msg = p.message || "Voice finished.";
+            if (!result.ok && p.heard) msg += ` Heard: "${p.heard}"`;
+            setMessage(msg);
+            await refreshStatus();
+          } finally {
+            release();
+          }
+        };
+        try {
+          rec.start();
+        } catch (_err) {
+          setMessage("Could not start voice recognition. Try HTTPS or localhost, or allow the mic.");
+          release();
+        }
+        return;
+      }
+      setMessage("Listening via server microphone (speak near the PC running this app)...");
+      const result = await postJson("/start_voice_command");
+      const p = result.payload || {};
+      let msg = p.message || "Voice finished.";
+      if (!result.ok && p.heard) msg += ` Heard: "${p.heard}"`;
+      setMessage(msg);
+      refreshStatus();
+    }
+
     async function refreshStatus() {
       try {
         const response = await fetch("/status");
         const status = await response.json();
         accessStatus.textContent = status.access || "IDLE";
+        accessStatus.classList.remove("is-success", "is-danger", "is-neutral");
+        const acc = String(status.access || "").toUpperCase();
+        if (acc.includes("GRANTED") || acc.includes("REGISTERED")) {
+          accessStatus.classList.add("is-success");
+        } else if (acc.includes("DENIED")) {
+          accessStatus.classList.add("is-danger");
+        } else {
+          accessStatus.classList.add("is-neutral");
+        }
         commandStatus.textContent = status.command || "NONE";
-        lightStatus.textContent = (status.controls || {}).light || "OFF";
         const ctr = status.controls || {};
+        lightStatus.textContent = ctr.light || "OFF";
+        light2Status.textContent = ctr.light_2 || "OFF";
         doorStatus.textContent = ctr.door || "CLOSED";
         roomDoorStatus.textContent = ctr.room_door || "CLOSED";
         exitDoorStatus.textContent = ctr.exit_door || "CLOSED";
@@ -236,16 +429,8 @@
       }
     }
 
-    async function loadAlerts() {
-      const response = await fetch("/admin/notifications");
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        updateNotifBadge(0);
-        return;
-      }
-      updateNotifBadge(payload.unacknowledged_count);
+    function renderMainAlertsList(rows) {
       alertsList.innerHTML = "";
-      const rows = payload.notifications || [];
       if (!rows.length) {
         alertsList.innerHTML = "<p class='muted'>No alerts yet.</p>";
         return;
@@ -301,6 +486,116 @@
       });
     }
 
+    function kindLabel(kind) {
+      if (kind === "emergency") return "Emergency";
+      if (kind === "motion") return "Motion";
+      if (kind === "unauthorized") return "Unauthorized";
+      return "Alert";
+    }
+
+    function renderDropdownAlertsList(rows) {
+      if (!notifDropdownList) return;
+      notifDropdownList.innerHTML = "";
+      if (!rows.length) {
+        const empty = document.createElement("p");
+        empty.className = "notif-dropdown-empty muted";
+        empty.textContent = "No alerts yet.";
+        notifDropdownList.appendChild(empty);
+        return;
+      }
+      rows.forEach((note) => {
+        const isEmergency = note.kind === "emergency";
+        const isAck = !!note.acknowledged;
+        const item = document.createElement("div");
+        item.className =
+          "notif-dropdown-item" +
+          (isEmergency ? " notif-dropdown-item--emergency" : "") +
+          (isAck && isEmergency ? " notif-dropdown-item--ack" : "");
+
+        const row = document.createElement("div");
+        row.className = "notif-dropdown-item__row";
+
+        if (note.image) {
+          const img = document.createElement("img");
+          img.className = "notif-dropdown-item__thumb";
+          img.src = note.image;
+          img.alt = "";
+          row.appendChild(img);
+        } else {
+          const ph = document.createElement("div");
+          ph.className = "notif-dropdown-item__thumb notif-dropdown-item__thumb--ph muted";
+          ph.textContent = kindLabel(note.kind).charAt(0);
+          row.appendChild(ph);
+        }
+
+        const text = document.createElement("div");
+        text.className = "notif-dropdown-item__text";
+        const label = document.createElement("span");
+        label.className = "notif-dropdown-item__kind";
+        label.textContent = kindLabel(note.kind);
+        const msg = document.createElement("p");
+        msg.className = "notif-dropdown-item__msg";
+        msg.textContent = note.message || "";
+        const time = document.createElement("time");
+        time.className = "notif-dropdown-item__time muted";
+        time.textContent = note.time || "";
+        text.appendChild(label);
+        text.appendChild(msg);
+        text.appendChild(time);
+        row.appendChild(text);
+        item.appendChild(row);
+
+        if (isEmergency && !isAck && note.id) {
+          const ackBtn = document.createElement("button");
+          ackBtn.type = "button";
+          ackBtn.className = "notif-dropdown-ack";
+          ackBtn.textContent = "Acknowledge & lock doors";
+          ackBtn.dataset.ackId = note.id;
+          item.appendChild(ackBtn);
+        } else if (isEmergency && isAck) {
+          const tag = document.createElement("div");
+          tag.className = "notif-dropdown-acktag muted";
+          tag.textContent = "Acknowledged";
+          item.appendChild(tag);
+        }
+
+        notifDropdownList.appendChild(item);
+      });
+    }
+
+    function applyNotificationsPayload(payload) {
+      if (!payload || typeof payload !== "object") return;
+      updateNotifBadge(payload.unacknowledged_count);
+      const rows = payload.notifications || [];
+      const n = rows.length;
+      const unack = Number(payload.unacknowledged_count) || 0;
+      if (notifDropdownMeta) {
+        notifDropdownMeta.textContent =
+          n === 0 ? "No items" : `${n} total${unack ? ` · ${unack} need action` : ""}`;
+      }
+      renderMainAlertsList(rows);
+      renderDropdownAlertsList(rows);
+    }
+
+    async function loadAlerts() {
+      const response = await fetch("/admin/notifications");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        updateNotifBadge(0);
+        if (notifDropdownMeta) notifDropdownMeta.textContent = "";
+        return;
+      }
+      applyNotificationsPayload(payload);
+    }
+
+    function setNotifDropdownOpen(open) {
+      if (!notifDropdown || !notifBellBtn) return;
+      notifDropdown.hidden = !open;
+      notifBellBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      if (notifDropdownWrap) notifDropdownWrap.classList.toggle("is-open", open);
+      if (open) loadAlerts();
+    }
+
     registerBtn.addEventListener("click", async () => {
       const username = usernameInput.value.trim();
       if (!username) return setMessage("Enter a username first.");
@@ -338,6 +633,20 @@
         fpRegisterBtn.disabled = false;
       }
     });
+
+    if (fpReinitBtn) {
+      fpReinitBtn.addEventListener("click", async () => {
+        setMessage("Re-running fingerprint UART handshake on ESP32 (~5–25 s)…");
+        fpReinitBtn.disabled = true;
+        try {
+          const result = await postJson("/admin/fingerprint-reinit", {});
+          const p = result.payload || {};
+          setMessage(p.message || (result.ok ? "Fingerprint sensor ready." : "Handshake failed."));
+        } finally {
+          fpReinitBtn.disabled = false;
+        }
+      });
+    }
 
     usersList.addEventListener("click", async (event) => {
       const btn = event.target.closest("button[data-name]");
@@ -377,18 +686,34 @@
 
     clearAlertsBtn.addEventListener("click", async () => {
       await postJson("/admin/clear_notifications");
+      setNotifDropdownOpen(false);
       loadAlerts();
       setMessage("Alerts cleared.");
     });
 
-    notifBellBtn.addEventListener("click", () => {
+    notifBellBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = notifDropdown.hidden;
+      setNotifDropdownOpen(open);
+    });
+
+    notifViewAll.addEventListener("click", () => {
+      setNotifDropdownOpen(false);
       document.getElementById("security-alerts-section").scrollIntoView({ behavior: "smooth", block: "start" });
     });
 
-    alertsList.addEventListener("click", async (event) => {
-      const btn = event.target.closest("button[data-ack-id]");
-      if (!btn) return;
+    document.addEventListener("click", (e) => {
+      if (!notifDropdownWrap || notifDropdown.hidden) return;
+      if (!notifDropdownWrap.contains(e.target)) setNotifDropdownOpen(false);
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && notifDropdown && !notifDropdown.hidden) setNotifDropdownOpen(false);
+    });
+
+    async function handleAcknowledgeEmergency(btn) {
       const id = btn.dataset.ackId;
+      if (!id) return;
       btn.disabled = true;
       try {
         const result = await postJson("/admin/acknowledge_emergency", { id });
@@ -404,18 +729,22 @@
       } finally {
         btn.disabled = false;
       }
+    }
+
+    alertsList.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-ack-id]");
+      if (!btn) return;
+      handleAcknowledgeEmergency(btn);
     });
 
-    voiceBtn.addEventListener("click", async () => {
-      setMessage("Listening for voice command...");
-      const result = await postJson("/start_voice_command");
-      const p = result.payload || {};
-      let msg = p.message || "Voice finished.";
-      if (!result.ok && p.heard) {
-        msg += ` Heard: "${p.heard}"`;
-      }
-      setMessage(msg);
-      refreshStatus();
+    notifDropdownList.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-ack-id]");
+      if (!btn) return;
+      handleAcknowledgeEmergency(btn);
+    });
+
+    voiceBtn.addEventListener("click", () => {
+      runVoiceCommandFlow();
     });
 
     logoutBtn.addEventListener("click", async () => {
